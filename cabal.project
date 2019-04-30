@@ -3,4 +3,5 @@ packages:
   servant-auth-client
   servant-auth-docs
   servant-auth-server
+  servant-auth-snap
   servant-auth-swagger
