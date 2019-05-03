@@ -7,12 +7,13 @@ module Servant.Auth.Server.Internal.ThrowAll where
 #endif
 
 import Control.Monad.Error.Class
+import Data.Monoid.Endo
 import Data.Tagged               (Tagged (..))
 import Servant                   ((:<|>) (..), ServerError(..))
-import Network.HTTP.Types
-import Network.Wai
+import Snap.Core
 
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as LBS
 
 class ThrowAll a where
   -- | 'throwAll' is a convenience function to throw errors across an entire
@@ -29,21 +30,24 @@ instance (ThrowAll a, ThrowAll b) => ThrowAll (a :<|> b) where
 -- Really this shouldn't be necessary - ((->) a) should be an instance of
 -- MonadError, no?
 instance {-# OVERLAPPING #-} ThrowAll b => ThrowAll (a -> b) where
-  throwAll e = const $ throwAll e
+  throwAll e = throwAll e
 
 instance {-# OVERLAPPABLE #-} (MonadError ServerError m) => ThrowAll (m a) where
   throwAll = throwError
 
 -- | for @servant <0.11@
-instance {-# OVERLAPPING #-} ThrowAll Application where
-  throwAll e _req respond
-      = respond $ responseLBS (mkStatus (errHTTPCode e) (BS.pack $ errReasonPhrase e))
-                              (errHeaders e)
-                              (errBody e)
+instance {-# OVERLAPPING #-} ThrowAll (Snap a) where
+  throwAll = throwAllSnap
 
 -- | for @servant >=0.11@
-instance {-# OVERLAPPING #-} MonadError ServerError m => ThrowAll (Tagged m Application) where
-  throwAll e = Tagged $ \_req respond ->
-      respond $ responseLBS (mkStatus (errHTTPCode e) (BS.pack $ errReasonPhrase e))
-                              (errHeaders e)
-                              (errBody e)
+instance {-# OVERLAPPING #-} MonadError ServerError m => ThrowAll (Tagged m (Snap a)) where
+  throwAll e = Tagged $ throwAllSnap e
+
+throwAllSnap :: MonadSnap m => ServantErr -> m b
+throwAllSnap e = do
+  modifyResponse
+    $ setResponseStatus (errHTTPCode e) (BS.pack $ errReasonPhrase e)
+    . (appEndo $ foldMap (\(hn,hv) -> Endo $ addHeader hn hv) (errHeaders e))
+  writeBS (LBS.toStrict $ errBody e)
+  r <- getResponse
+  finishWith r
