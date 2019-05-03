@@ -29,7 +29,7 @@ class FromBasicAuthData a where
   -- accidentally do something untoward with the password, like store it.
   fromBasicAuthData :: BasicAuthData -> BasicAuthCfg -> IO (AuthResult a)
 
-basicAuthCheck :: FromBasicAuthData usr => BasicAuthCfg -> AuthCheck usr
+basicAuthCheck :: FromBasicAuthData usr => BasicAuthCfg -> AuthCheck m usr
 basicAuthCheck cfg = AuthCheck $ \req -> case decodeBAHdr req of
   Nothing -> pure Indefinite
   Just baData -> liftIO $ fromBasicAuthData baData cfg

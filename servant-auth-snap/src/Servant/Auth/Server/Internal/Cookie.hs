@@ -26,7 +26,7 @@ import Servant.Auth.Server.Internal.JWT         (FromJWT (decodeJWT), ToJWT,
 import Servant.Auth.Server.Internal.Types
 
 
-cookieAuthCheck :: FromJWT usr => CookieSettings -> JWTSettings -> AuthCheck usr
+cookieAuthCheck :: (MonadIO m, FromJWT usr) => CookieSettings -> JWTSettings -> AuthCheck m usr
 cookieAuthCheck ccfg jwtCfg = do
   req <- ask
   jwtCookie <- maybe mempty return $ do

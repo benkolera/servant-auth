@@ -45,7 +45,7 @@ class ToJWT a where
 
 -- | A JWT @AuthCheck@. You likely won't need to use this directly unless you
 -- are protecting a @Raw@ endpoint.
-jwtAuthCheck :: FromJWT usr => JWTSettings -> AuthCheck usr
+jwtAuthCheck :: (MonadIO m, FromJWT usr) => JWTSettings -> AuthCheck m usr
 jwtAuthCheck config = do
   req <- ask
   token <- maybe mempty return $ do

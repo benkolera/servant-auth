@@ -1,5 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 module Servant.Auth.Server.Internal.Class where
+
+import Control.Monad.IO.Class (MonadIO)
 
 import Servant.Auth
 import Servant hiding (BasicAuth)
@@ -15,7 +18,7 @@ import Servant.Auth.Server.Internal.JWT
 -- returns an @AuthCheck v@.
 class IsAuth a v where
   type family AuthArgs a :: [*]
-  runAuth :: proxy a -> proxy v -> Unapp (AuthArgs a) (AuthCheck v)
+  runAuth :: MonadIO m => proxy a -> proxy v -> Unapp (AuthArgs a) (AuthCheck m v)
 
 instance FromJWT usr => IsAuth Cookie usr where
   type AuthArgs Cookie = '[CookieSettings, JWTSettings]
@@ -32,15 +35,15 @@ instance FromBasicAuthData usr => IsAuth BasicAuth usr where
 -- * Helper
 
 class AreAuths (as :: [*]) (ctxs :: [*]) v where
-  runAuths :: proxy as -> Context ctxs -> AuthCheck v
+  runAuths :: Monad m => proxy as -> Context ctxs -> AuthCheck m v
 
 instance  AreAuths '[] ctxs v where
   runAuths _ _ = mempty
 
-instance ( AuthCheck v ~ App (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck v))
+instance ( AuthCheck m v ~ App (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck m v))
          , IsAuth a v
          , AreAuths as ctxs v
-         , AppCtx ctxs (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck v))
+         , AppCtx ctxs (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck m v))
          ) => AreAuths (a ': as) ctxs v where
   runAuths _ ctxs = go <> runAuths (Proxy :: Proxy as) ctxs
     where
@@ -48,11 +51,11 @@ instance ( AuthCheck v ~ App (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck v))
                   ctxs
                   (runAuth (Proxy :: Proxy a) (Proxy :: Proxy v))
 
-type family Unapp ls res where
+type family Unapp ls res = result where
   Unapp '[] res = res
   Unapp (arg1 ': rest) res = arg1 -> Unapp rest res
 
-type family App ls res where
+type family App ls res = result where
   App '[] res = res
   App (arg1 ': rest) (arg1 -> res) = App rest res
 

@@ -7,7 +7,7 @@ import Data.Monoid          (Monoid (..))
 import Data.Semigroup       (Semigroup (..))
 import Data.Time            (getCurrentTime)
 import GHC.Generics         (Generic)
-import Snap.Core            (Request, Snap)
+import Snap.Core            (Request, MonadSnap)
 
 -- | The result of an authentication attempt.
 data AuthResult val
@@ -54,26 +54,26 @@ instance MonadPlus AuthResult where
 -- (the 'AuthResult') of a request. Different @AuthCheck@s may be combined as a
 -- Monoid or Alternative; the semantics of this is that the *first*
 -- non-'Indefinite' result from left to right is used and the rest are ignored.
-newtype AuthCheck val = AuthCheck
-  { runAuthCheck :: Request -> Snap (AuthResult val) }
-  deriving (Generic, Functor)
+newtype AuthCheck m val = AuthCheck
+  { runAuthCheck :: MonadSnap m => Request -> m (AuthResult val) }
+  deriving (Functor)
 
-instance Semigroup (AuthCheck val) where
+instance Monad m => Semigroup (AuthCheck m val) where
   AuthCheck f <> AuthCheck g = AuthCheck $ \x -> do
     fx <- f x
     case fx of
       Indefinite -> g x
       r -> pure r
 
-instance Monoid (AuthCheck val) where
+instance Monad m => Monoid (AuthCheck m val) where
   mempty = AuthCheck $ const $ pure mempty
   mappend = (<>)
 
-instance Applicative AuthCheck where
+instance Monad m => Applicative (AuthCheck m) where
   pure = pure
   (<*>) = ap
 
-instance Monad AuthCheck where
+instance Monad m => Monad (AuthCheck m) where
   return = AuthCheck . return . return . return
   fail _ = AuthCheck . const $ return Indefinite
   AuthCheck ac >>= f = AuthCheck $ \req -> do
@@ -84,20 +84,20 @@ instance Monad AuthCheck where
       NoSuchUser        -> return NoSuchUser
       Indefinite        -> return Indefinite
 
-instance MonadReader Request AuthCheck where
+instance Monad m => MonadReader Request (AuthCheck m) where
   ask = AuthCheck $ \x -> return (Authenticated x)
   local f (AuthCheck check) = AuthCheck $ \req -> check (f req)
 
-instance MonadIO AuthCheck where
+instance MonadIO m => MonadIO (AuthCheck m) where
   liftIO action = AuthCheck $ const $ Authenticated <$> liftIO action
 
-instance MonadTime AuthCheck where
+instance MonadIO m => MonadTime (AuthCheck m) where
   currentTime = liftIO getCurrentTime
 
-instance Alternative AuthCheck where
+instance Monad m => Alternative (AuthCheck m) where
   empty = mzero
   (<|>) = mplus
 
-instance MonadPlus AuthCheck where
+instance Monad m => MonadPlus (AuthCheck m) where
   mzero = mempty
   mplus = (<>)
