@@ -3,6 +3,7 @@
 module Servant.Auth.Server.Internal.Class where
 
 import Control.Monad.IO.Class (MonadIO)
+import Snap.Core (MonadSnap)
 
 import Servant.Auth
 import Servant hiding (BasicAuth)
@@ -16,35 +17,37 @@ import Servant.Auth.Server.Internal.JWT
 -- | @IsAuth a ctx v@ indicates that @a@ is an auth type that expects all
 -- elements of @ctx@ to be the in the Context and whose authentication check
 -- returns an @AuthCheck v@.
-class IsAuth a v where
+class MonadSnap m => IsAuth m a v where
   type family AuthArgs a :: [*]
-  runAuth :: MonadIO m => proxy a -> proxy v -> Unapp (AuthArgs a) (AuthCheck m v)
+  runAuth
+    :: (AuthCheck m v ~ App (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck m v)), MonadIO m)
+    => proxy a -> proxy v -> Unapp (AuthArgs a) (AuthCheck m v)
 
-instance FromJWT usr => IsAuth Cookie usr where
+instance (MonadSnap m, FromJWT usr) => IsAuth m Cookie usr where
   type AuthArgs Cookie = '[CookieSettings, JWTSettings]
   runAuth _ _ = cookieAuthCheck
 
-instance FromJWT usr => IsAuth JWT usr where
+instance (MonadSnap m, FromJWT usr) => IsAuth m JWT usr where
   type AuthArgs JWT = '[JWTSettings]
   runAuth _ _ = jwtAuthCheck
 
-instance FromBasicAuthData usr => IsAuth BasicAuth usr where
+instance (MonadSnap m, FromBasicAuthData usr) => IsAuth m BasicAuth usr where
   type AuthArgs BasicAuth = '[BasicAuthCfg]
   runAuth _ _ = basicAuthCheck
 
 -- * Helper
 
-class AreAuths (as :: [*]) (ctxs :: [*]) v where
+class MonadSnap m => AreAuths m (as :: [*]) (ctxs :: [*]) v where
   runAuths :: Monad m => proxy as -> Context ctxs -> AuthCheck m v
 
-instance  AreAuths '[] ctxs v where
+instance MonadSnap m => AreAuths m '[] ctxs v where
   runAuths _ _ = mempty
 
 instance ( AuthCheck m v ~ App (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck m v))
-         , IsAuth a v
-         , AreAuths as ctxs v
+         , IsAuth m a v
+         , AreAuths m as ctxs v
          , AppCtx ctxs (AuthArgs a) (Unapp (AuthArgs a) (AuthCheck m v))
-         ) => AreAuths (a ': as) ctxs v where
+         ) => AreAuths m (a ': as) ctxs v where
   runAuths _ ctxs = go <> runAuths (Proxy :: Proxy as) ctxs
     where
       go = appCtx (Proxy :: Proxy (AuthArgs a))
